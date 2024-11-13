@@ -25,6 +25,8 @@ LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
 //Variables de control
 int opcionMenu;
 boolean procesoEnMarcha;
+boolean salirMenu;
+boolean arrancarProceso;
 
 // Crear una instancia de AccelStepper
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
@@ -71,66 +73,139 @@ void loop() {
   
   //Pintamos la información de la pantalla de inicio
   lcd.clear();
-  lcd.println("Temperatura: " + temperaturaReal + "º/" + temperaturaObjetivo + "º");
-  lcd.println("Velocidad del PAP: " + velocidadPAP);
-  lcd.println("Filamento extruido: " + filamentoExtruido + " metros");
-  lcd.println("Estado: ")
-
+  lcd.println("Temperatura: " + String(temperaturaReal) + "º/" + String(temperaturaObjetivo) + "º");
+  lcd.println("Velocidad del PAP: " + String(velocidadPAP));
+  lcd.println("Filamento extruido: " + String(filamentoExtruido) + " metros");
+  lcd.println("Estado: ");
+  
   // Se controla si se accede o no al menú (botonCentro)
   if (digitalRead(botonCentro) == HIGH) {
+
+    if(salirMenu == false){
+      salirMenu = true;
+    }
+
+    while (salirMenu) {
     //Se ha pulsado el botón del centro, entramos en la configuración
     //Apareceran diferentes opciones, dependiendo de la elegida se realizará una acción u otra.
-    lcd.println("Volver a pantalla de información");
-    lcd.println("Configurar temperatura objetivo");
-    lcd.println("Configurar velocidad del PAP");
-    lcd.println("Iniciar proceso");
+    printMenu(opcionMenu);
 
-    delay(100);
+    delay(50);
 
-    while (digitalRead(botonCentro == LOW)) {
+      if (digitalRead(botonAbajo)) {
 
-
-
-      if (digitalRead(botonDerecha)) {
-
-        if (opcionMenu == 2) {
+        if (opcionMenu == 3) {
           opcionMenu = 0;
         } else {
           opcionMenu++;
         }
 
-      } else if (digitalRead(botonIzquierda)) {
+      } else if (digitalRead(botonArriba)) {
 
         if (opcionMenu == 0) {
-          opcionMenu = 2;
+          opcionMenu = 3;
         } else {
           opcionMenu--;
         }
       }
 
-      switch (opcionMenu) {
-        case 0:
-          lcd.setCursor(0, 2);
-          lcd.print("Ajustar velocidad de");
-          lcd.setCursor(0, 3);
-          lcd.print("motor");
-
-        case 1:
-          lcd.setCursor(0, 2);
-          lcd.print("Ajustar temperatura de");
-          lcd.setCursor(0, 3);
-          lcd.print("hotend");
-
-        case 2:
-          lcd.setCursor(0, 2);
-          lcd.print("Empezar proceso");
+      if (digitalRead(botonCentro) == HIGH) {
+        switch (opcionMenu) {
+          case 0: 
+            salirMenu = false;
+            break;
+          case 1:
+            configureTemp();
+            break;
+          case 2:
+            configureStepperSpeed();
+            break;
+          case 3:
+            arrancarProceso = true;
+            break;
+        }
       }
+
     }
   }
 
-  stepper.runSpeed();
+  //En caso de proceso en marcha se arranca este proceso
+  if(arrancarProceso){
+    procesoEnMarcha = true;
+    //Encendemos el hotend y esperamos hasta llegar a temperatura objetivo
+    turnOnHotend();
+    arrancarProceso = false;
+  }
+
+  if(procesoEnMarcha){
+    stepper.runSpeed();
+  }
+
+
+  
 }
 
+void turnOnHotend(){
+
+}
+
+
+void configureTemp(){
+
+  lcd.clear();
+  while (true) {
+    lcd.print("Temperatura objetivo: " + String(temperaturaObjetivo));
+    if (digitalRead(botonDerecha) && temperaturaObjetivo < 260) {
+      temperaturaObjetivo++;
+    }else if (digitalRead(botonIzquierda) && temperaturaObjetivo > 0) {
+      temperaturaObjetivo--;
+    }else if (digitalRead(botonCentro)) {
+      break;
+    }
+  }
+
+}
+
+void configureStepperSpeed(){
+  
+  lcd.clear();
+  while (true) {
+    lcd.print("Velocidad motor: " + String(velocidadPAP));
+    if (digitalRead(botonDerecha) && velocidadPAP < 260) {
+      velocidadPAP++;
+    }else if (digitalRead(botonIzquierda) && velocidadPAP > 0) {
+      velocidadPAP--;
+    }else if (digitalRead(botonCentro)) {
+      break;
+    }
+  }
+
+}
+
+
+void printMenu(int arrayPosition){
+  if(arrayPosition == 0){
+    lcd.println("=> Volver a pantalla de información");
+    lcd.println("Configurar temperatura objetivo");
+    lcd.println("Configurar velocidad del PAP");
+    lcd.println("Iniciar proceso");
+  }else if (arrayPosition == 1) {
+    lcd.println("Volver a pantalla de información");
+    lcd.println("=> Configurar temperatura objetivo");
+    lcd.println("Configurar velocidad del PAP");
+    lcd.println("Iniciar proceso");
+  }else if (arrayPosition == 2) {
+    lcd.println("Volver a pantalla de información");
+    lcd.println("Configurar temperatura objetivo");
+    lcd.println("=>Configurar velocidad del PAP");
+    lcd.println("Iniciar proceso");
+  }else if(arrayPosition == 3){
+    lcd.println("Volver a pantalla de información");
+    lcd.println("Configurar temperatura objetivo");
+    lcd.println("Configurar velocidad del PAP");
+    lcd.println("=>Iniciar proceso");
+  }
+}
 
 
 //Metodo para limpiar lineas solas de la LCD
