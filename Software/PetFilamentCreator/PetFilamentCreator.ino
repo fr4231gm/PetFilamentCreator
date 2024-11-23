@@ -1,15 +1,16 @@
 #include <AccelStepper.h>
 #include <LiquidCrystal.h>
+#include <PID_v1.h>
 
 //Pines de dirección y de pasos para el controlador (DRV)
 const int DIR_PIN = 2;
 const int STEP_PIN = 3;
 
 //Datos para el medidor de temperatura
-const int thermistorPin = A0;  // Pin analógico donde está conectado el termistor
+const int thermistorPin = A0;            // Pin analógico donde está conectado el termistor
 const float nominalResistance = 100000;  // Resistencia nominal del termistor a 25°C (100 kΩ)
-const float nominalTemperature = 25.0;  // Temperatura nominal del termistor (25°C)
-const float bCoefficient = 3950;  // Coeficiente Beta del termistor
+const float nominalTemperature = 25.0;   // Temperatura nominal del termistor (25°C)
+const float bCoefficient = 3950;         // Coeficiente Beta del termistor
 const float seriesResistorValue = 6800;  // Resistencia en serie (10 kΩ)
 
 //Botones de control
@@ -32,10 +33,18 @@ boolean arrancarProceso;
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 
 //Variables propias del programa
-float temperaturaObjetivo;
-float temperaturaReal;
+double temperaturaObjetivo;
+double temperaturaReal;
 float velocidadPAP;
 float filamentoExtruido;
+
+//Variables de PID
+double Kp = 80.0;
+double Ki = 35.0;
+double Kd = 80.0;
+double output;
+PID pid(&temperaturaReal, &output, &temperaturaObjetivo, Kp, Ki, Kd, DIRECT);
+const int pwmPin = 3;
 
 void setup() {
   // Configurar la velocidad máxima y aceleración
@@ -52,45 +61,38 @@ void setup() {
   opcionMenu = 0;
   procesoEnMarcha = false;
   temperaturaObjetivo = 0;
-  velocidadPAP = 0; //IMPORTANTE, EN RPM
-  filamentoExtruido = 0; //IMPORTANTE, EN METROS
+  velocidadPAP = 0;       //IMPORTANTE, EN RPM
+  filamentoExtruido = 0;  //IMPORTANTE, EN METROS
 
+  //Se definden los valores para PID
+  readTemp();
+  pid.SetMode(AUTOMATIC);
+  pid.SetOutputLimits(0, 255);
+  pinMode(pwmPin, OUTPUT);
 }
 
 void loop() {
-  int adcValue = analogRead(thermistorPin);  // Lee el valor del ADC
-  float resistance = seriesResistorValue / (1023.0 / adcValue - 1);  // Calcula la resistencia del termistor
-  
-  // Calcula la temperatura usando la ecuación de Steinhart-Hart
-  float temperatura;
-  temperatura = resistance / nominalResistance;  // (R/Ro)
-  temperatura = log(temperatura);  // ln(R/Ro)
-  temperatura /= bCoefficient;  // 1/B * ln(R/Ro)
-  temperatura += 1.0 / (nominalTemperature + 273.15);  // + (1/To)
-  temperatura = 1.0 / temperatura;  // Invertir
-  temperatura -= 273.15;  // Convierte de Kelvin a Celsius
-  temperaturaReal = temperatura;
-  
+
   //Pintamos la información de la pantalla de inicio
   lcd.clear();
   lcd.println("Temperatura: " + String(temperaturaReal) + "º/" + String(temperaturaObjetivo) + "º");
   lcd.println("Velocidad del PAP: " + String(velocidadPAP));
   lcd.println("Filamento extruido: " + String(filamentoExtruido) + " metros");
   lcd.println("Estado: ");
-  
+
   // Se controla si se accede o no al menú (botonCentro)
   if (digitalRead(botonCentro) == HIGH) {
 
-    if(salirMenu == false){
+    if (salirMenu == false) {
       salirMenu = true;
     }
 
     while (salirMenu) {
-    //Se ha pulsado el botón del centro, entramos en la configuración
-    //Apareceran diferentes opciones, dependiendo de la elegida se realizará una acción u otra.
-    printMenu(opcionMenu);
+      //Se ha pulsado el botón del centro, entramos en la configuración
+      //Apareceran diferentes opciones, dependiendo de la elegida se realizará una acción u otra.
+      printMenu(opcionMenu);
 
-    delay(50);
+      delay(50);
 
       if (digitalRead(botonAbajo)) {
 
@@ -111,7 +113,7 @@ void loop() {
 
       if (digitalRead(botonCentro) == HIGH) {
         switch (opcionMenu) {
-          case 0: 
+          case 0:
             salirMenu = false;
             break;
           case 1:
@@ -125,81 +127,103 @@ void loop() {
             break;
         }
       }
-
     }
   }
 
   //En caso de proceso en marcha se arranca este proceso
-  if(arrancarProceso){
+  if (arrancarProceso) {
     procesoEnMarcha = true;
     //Encendemos el hotend y esperamos hasta llegar a temperatura objetivo
     turnOnHotend();
     arrancarProceso = false;
   }
 
-  if(procesoEnMarcha){
+  if (procesoEnMarcha) {
     stepper.runSpeed();
   }
-
-
-  
 }
 
-void turnOnHotend(){
+void turnOnHotend() {
 
+  boolean temperaturaAlcanzada = false;
+  int contadorAciertos = 0;
+
+  while (!temperaturaAlcanzada) {
+    
+    
+    pid.Compute();
+    //Le envíamos el output obtenido
+    analogWrite(pwmPin, output);
+    readTemp();
+
+  }
 }
 
 
-void configureTemp(){
+void configureTemp() {
 
   lcd.clear();
   while (true) {
     lcd.print("Temperatura objetivo: " + String(temperaturaObjetivo));
     if (digitalRead(botonDerecha) && temperaturaObjetivo < 260) {
       temperaturaObjetivo++;
-    }else if (digitalRead(botonIzquierda) && temperaturaObjetivo > 0) {
+    } else if (digitalRead(botonIzquierda) && temperaturaObjetivo > 0) {
       temperaturaObjetivo--;
-    }else if (digitalRead(botonCentro)) {
+    } else if (digitalRead(botonCentro)) {
       break;
     }
   }
-
 }
 
-void configureStepperSpeed(){
-  
+void readTemp() {
+
+  int adcValue = analogRead(thermistorPin);                          // Lee el valor del ADC
+  float resistance = seriesResistorValue / (1023.0 / adcValue - 1);  // Calcula la resistencia del termistor
+
+  // Calcula la temperatura usando la ecuación de Steinhart-Hart
+  float temperatura;
+  temperatura = resistance / nominalResistance;        // (R/Ro)
+  temperatura = log(temperatura);                      // ln(R/Ro)
+  temperatura /= bCoefficient;                         // 1/B * ln(R/Ro)
+  temperatura += 1.0 / (nominalTemperature + 273.15);  // + (1/To)
+  temperatura = 1.0 / temperatura;                     // Invertir
+  temperatura -= 273.15;                               // Convierte de Kelvin a Celsius
+  temperaturaReal = temperatura;
+}
+
+void configureStepperSpeed() {
+
   lcd.clear();
   while (true) {
     lcd.print("Velocidad motor: " + String(velocidadPAP));
     if (digitalRead(botonDerecha) && velocidadPAP < 260) {
       velocidadPAP++;
-    }else if (digitalRead(botonIzquierda) && velocidadPAP > 0) {
+    } else if (digitalRead(botonIzquierda) && velocidadPAP > 0) {
       velocidadPAP--;
-    }else if (digitalRead(botonCentro)) {
+    } else if (digitalRead(botonCentro)) {
       break;
     }
   }
-
 }
 
 
-void printMenu(int arrayPosition){
-  if(arrayPosition == 0){
+void printMenu(int arrayPosition) {
+  if (arrayPosition == 0) {
     lcd.println("=> Volver a pantalla de información");
     lcd.println("Configurar temperatura objetivo");
     lcd.println("Configurar velocidad del PAP");
     lcd.println("Iniciar proceso");
-  }else if (arrayPosition == 1) {
+  } else if (arrayPosition == 1) {
     lcd.println("Volver a pantalla de información");
     lcd.println("=> Configurar temperatura objetivo");
     lcd.println("Configurar velocidad del PAP");
     lcd.println("Iniciar proceso");
-  }else if (arrayPosition == 2) {
+  } else if (arrayPosition == 2) {
     lcd.println("Volver a pantalla de información");
     lcd.println("Configurar temperatura objetivo");
     lcd.println("=>Configurar velocidad del PAP");
     lcd.println("Iniciar proceso");
-  }else if(arrayPosition == 3){
+  } else if (arrayPosition == 3) {
     lcd.println("Volver a pantalla de información");
     lcd.println("Configurar temperatura objetivo");
     lcd.println("Configurar velocidad del PAP");
