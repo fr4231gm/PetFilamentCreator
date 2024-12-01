@@ -78,7 +78,11 @@ void loop() {
   lcd.println("Temperatura: " + String(temperaturaReal) + "º/" + String(temperaturaObjetivo) + "º");
   lcd.println("Velocidad del PAP: " + String(velocidadPAP));
   lcd.println("Filamento extruido: " + String(filamentoExtruido) + " metros");
-  lcd.println("Estado: ");
+  if (procesoEnMarcha) {
+    lcd.println("Estado: Creando filamento");
+  } else {
+    lcd.println("Estado: En pausa");
+  }
 
   // Se controla si se accede o no al menú (botonCentro)
   if (digitalRead(botonCentro) == HIGH) {
@@ -127,6 +131,14 @@ void loop() {
             break;
         }
       }
+
+      if (procesoEnMarcha) {
+        pid.Compute();
+        //Le envíamos el output obtenido
+        analogWrite(pwmPin, output);
+        readTemp();
+        stepper.runSpeed();
+      }
     }
   }
 
@@ -139,6 +151,10 @@ void loop() {
   }
 
   if (procesoEnMarcha) {
+    pid.Compute();
+    //Le envíamos el output obtenido
+    analogWrite(pwmPin, output);
+    readTemp();
     stepper.runSpeed();
   }
 }
@@ -147,15 +163,21 @@ void turnOnHotend() {
 
   boolean temperaturaAlcanzada = false;
   int contadorAciertos = 0;
+  lcd.clear();
 
   while (!temperaturaAlcanzada) {
-    
-    
+
+    lcd.println("Calentando hotend, espere");
+    lcd.println("Temperatura: " + String(temperaturaReal) + "º/" + String(temperaturaObjetivo) + "º");
+
     pid.Compute();
     //Le envíamos el output obtenido
     analogWrite(pwmPin, output);
     readTemp();
 
+    if (temperaturaReal == temperaturaObjetivo) {
+      temperaturaAlcanzada = true;
+    }
   }
 }
 
@@ -171,6 +193,14 @@ void configureTemp() {
       temperaturaObjetivo--;
     } else if (digitalRead(botonCentro)) {
       break;
+    }
+
+    if (procesoEnMarcha) {
+      pid.Compute();
+      //Le envíamos el output obtenido
+      analogWrite(pwmPin, output);
+      readTemp();
+      stepper.runSpeed();
     }
   }
 }
@@ -202,6 +232,14 @@ void configureStepperSpeed() {
       velocidadPAP--;
     } else if (digitalRead(botonCentro)) {
       break;
+    }
+
+    if (procesoEnMarcha) {
+      pid.Compute();
+      //Le envíamos el output obtenido
+      analogWrite(pwmPin, output);
+      readTemp();
+      stepper.runSpeed();
     }
   }
 }
